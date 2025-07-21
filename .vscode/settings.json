@@ -5,6 +5,7 @@
         "any": "cpp",
         "optional": "cpp",
         "variant": "cpp",
-        "system_error": "cpp"
+        "system_error": "cpp",
+        "sstream": "cpp"
     }
 }

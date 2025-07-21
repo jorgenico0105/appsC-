@@ -13,7 +13,7 @@ using namespace std;
 using namespace sql;
 using namespace chrono;
 using namespace OpenXLSX;
-
+                        
 struct Data {
     string agencia;
     string CodigoUsuario;

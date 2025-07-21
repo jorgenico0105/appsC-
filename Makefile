@@ -1,4 +1,4 @@
-TARGET = index
+TARGET = data
 CXX = g++
 CXXFLAGS = -Wall -Wextra -std=c++17 \
     -I/usr/local/include \
@@ -9,7 +9,7 @@ CXXFLAGS = -Wall -Wextra -std=c++17 \
 LDFLAGS = -L/usr/local/lib -Wl,-rpath=/usr/local/lib
 LIBS = -lmysqlcppconn -lOpenXLSX
 
-SRC = index.cpp
+SRC = data.cpp
 
 $(TARGET): $(SRC)
 	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS) $(LIBS)

@@ -16,9 +16,8 @@ using namespace OpenXLSX;
 
 struct Data
 {
-    int cohortid;
     string data;
-    Data(int corteId, string cedulaNumber) : cohortid(corteId), data(cedulaNumber) {}
+    Data(string cedulaNumber) : data(cedulaNumber) {}
 };
 
 struct ConexionMySQL
@@ -31,12 +30,12 @@ struct ConexionMySQL
     {
         try
         {
-            cout << "Conectando a base: " << db << endl;
+            // cout << "Conectando a base: " << db << endl;
             driver = mysql::get_mysql_driver_instance();
             con = driver->connect(host, user, pass);
             con->setSchema(db);
             stmt = con->createStatement();
-            cout << "Conexion exitosa." << endl;
+            // cout << "Conexion exitosa." << endl;
         }
         catch (SQLException &e)
         {
@@ -61,14 +60,6 @@ struct ConexionMySQL
             }
         }
         return nullptr;
-    }
-    int ejecutarConsultaInsert(const string &query)
-    {
-        if (stmt)
-        {
-            return stmt->executeUpdate(query);
-        }
-        return 0;
     }
     ~ConexionMySQL()
     {
@@ -95,16 +86,27 @@ struct ExcelFile
         {
             XLDocument doc;
             doc.open(ruta);
-            auto wks = doc.workbook().worksheet("Sheet1");
+            auto wks = doc.workbook().worksheet("Hoja 1");
             auto lastRow = wks.rowCount();
-
-            for (int i = 2; i <= static_cast<int>(lastRow); ++i)
+            // cout << lastRow;
+            for (int i = 1; i <= static_cast<int>(lastRow); ++i)
             {
-                int value = wks.cell(i, 1).value().get<int>();
-                string cedula = to_string(value);
-                int corte = wks.cell(i, 4).value().get<int>();
-                Data data(corte, cedula);
-                datos.push_back(data);
+               auto cell = wks.cell(i, 1);
+                if (cell.value().type() == XLValueType::Integer) {
+                string cedula = to_string(cell.value().get<int>());
+                datos.push_back(Data(cedula));
+            }
+                else if (cell.value().type() == XLValueType::String) {
+                    string cedula = cell.value().get<string>();
+                    datos.push_back(Data(cedula));
+                }
+                else if (cell.value().type() == XLValueType::Float) {
+                    string cedula = to_string(static_cast<long long>(cell.value().get<double>()));
+                    datos.push_back(Data(cedula));
+                }
+                else {
+                    cerr << "Fila " << i << ": tipo de celda no compatible o vacía." << endl;
+                }
             }
             doc.close();
             return true;
@@ -118,74 +120,68 @@ struct ExcelFile
 };
 int main()
 {
-    vector<DatosUpdate> updates;
     ExcelFile excel;
-    if (!excel.leerArchivo("bodegasCorte.xlsx"))
+    if (!excel.leerArchivo("catastro.xlsx"))
     {
-        cout << "Problemas leyendo archivo";
+        cerr << "Problemas leyendo archivo" << endl;
         return 1;
     }
+
     try
     {
-        //cambaiar credenciales aqui 
-        ConexionMySQL conn("***", "******", "******", "cursos_moodle");
+        ConexionMySQL conn("tcp://172.16.10.208", "root", "este1973", "cursos_moodle");
 
         if (!conn.con || !conn.stmt)
         {
             cerr << "No se pudo establecer la conexión a la base de datos." << endl;
             return 1;
         }
+
         for (const Data &d : excel.datos)
         {
-            string query = "SELECT u.id, u.username, u.firstname , u.lastname FROM user u "
+            string query = "SELECT u.id, u.firstname, u.lastname FROM user u "
                            "INNER JOIN user_info_data uid ON u.id = uid.userid "
-                           "WHERE uid.`data` = '" +
-                           d.data + "'";
+                           "WHERE uid.`data` = '" + d.data + "'";
+
             ResultSet *res = conn.ejecutarConsultaSelect(query);
             if (!res)
             {
-                cout << "ERrror fatal";
-                return 1;
+                cerr << "Error al ejecutar consulta de usuario para cédula: " << d.data << endl;
+                continue;
             }
+
             bool encontrado = false;
             while (res->next())
             {
+                encontrado = true;
                 int id = res->getInt("id");
                 string nombre = res->getString("firstname");
                 string apellido = res->getString("lastname");
-                int timestamp = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
-                DatosUpdate datos(d.cohortid, id,timestamp);
-                updates.push_back(datos);
-                encontrado = true;
+
+                string queryCohorte = "SELECT 1 FROM cohort_members WHERE userid = " + to_string(id) + " LIMIT 1";
+                ResultSet *response = conn.ejecutarConsultaSelect(queryCohorte);
+
+                bool isCohorte = (response && response->next());
+                if (!isCohorte)
+                {
+                    cout << "Usuario: " << nombre << " " << apellido << " (cédula: " << d.data << ") no pertenece a ninguna cohorte." << endl;
+                }
+
+                delete response;
             }
+
             if (!encontrado)
             {
-                cout << "Usuario no encontrado: " << d.data << "\n";
+                cout << "Usuario no encontrado con cédula: " << d.data << endl;
             }
+
             delete res;
-        }
-        for (const DatosUpdate &u : updates)
-        {
-            string queryInsert = "INSERT INTO cohort_members (cohortid, userid, timeadded) VALUES (" +
-                                 to_string(u.corte) + ", " +
-                                 to_string(u.userId) + ", " +
-                                 to_string(u.fechaTrans) + ")";
-            int result = conn.ejecutarConsultaInsert(queryInsert);
-            if (result > 0)
-            {
-                cout << "Insertado: UserID " << u.userId << " en cohort " << u.corte << endl;
-            }
-            else
-            {
-                cout << "Error al insertar UserID" << u.userId << endl;
-            }
         }
     }
     catch (const std::exception &e)
     {
-        cerr << "Excepcinn: " << e.what() << endl;
+        cerr << "Excepción: " << e.what() << endl;
         return 1;
-        
     }
 
     return 0;
